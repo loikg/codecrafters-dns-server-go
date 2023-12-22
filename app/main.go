@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -32,43 +31,41 @@ type DNSHeaderFlags struct {
 }
 
 func (msg DNSMessage) Serialize() []byte {
-    var buff bytes.Buffer
-
-    binary.Write(&buff, binary.BigEndian, msg.Header)
-
-    return buff.Bytes()
+    return msg.Header.Serialize()
 }
 
 func (header DNSHeader) Serialize() []byte {
-	var buff bytes.Buffer
-	var fields uint16
-	binary.Write(&buff, binary.BigEndian, header.ID)
+    buff := make([]byte, 12)
+	var flags uint16
+
+    binary.BigEndian.PutUint16(buff[:2], header.ID)
 
 	if header.Flags.QR {
-		fields |= 1 << 15 // set 1st bit
+		flags |= 1 << 15 // set 1st bit
 	}
-    fields |= header.Flags.OPCODE << 11
+    flags |= header.Flags.OPCODE << 11
 	if header.Flags.AA {
-		fields |= 1 << 10
+		flags |= 1 << 10
 	}
 	if header.Flags.TC {
-		fields |= 1 << 9
+		flags |= 1 << 9
 	}
 	if header.Flags.RD {
-		fields |= 1 << 8
+		flags |= 1 << 8
 	}
 	if header.Flags.RA {
-		fields |= 1 << 7
+		flags |= 1 << 7
 	}
-    fields |= header.Flags.Z << 4
-    fields |= header.Flags.RCODE << 0
+    flags |= header.Flags.Z << 4
+    flags |= header.Flags.RCODE
 
-    binary.Write(&buff, binary.BigEndian, fields)
-	binary.Write(&buff, binary.BigEndian, header.QDCOUNT)
-	binary.Write(&buff, binary.BigEndian, header.ANCOUNT)
-	binary.Write(&buff, binary.BigEndian, header.NSCOUNT)
-	binary.Write(&buff, binary.BigEndian, header.ARCOUNT)
-	return buff.Bytes()
+    binary.BigEndian.PutUint16(buff[2:4], flags)
+    binary.BigEndian.PutUint16(buff[4:6], header.QDCOUNT)
+    binary.BigEndian.PutUint16(buff[6:8], header.ANCOUNT)
+    binary.BigEndian.PutUint16(buff[8:10], header.NSCOUNT)
+    binary.BigEndian.PutUint16(buff[10:], header.ARCOUNT)
+
+    return buff
 }
 
 func main() {
@@ -97,16 +94,18 @@ func main() {
 		receivedData := string(buf[:size])
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 
-		response := DNSMessage{
+        msg := DNSMessage{
             Header: DNSHeader{
                 ID: 1234, 
                 Flags: DNSHeaderFlags{
                     QR: true,
                 },
             },
-        }.Serialize()
+        }
 
-		_, err = udpConn.WriteToUDP(response, source)
+		response := msg.Serialize()
+
+        _, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
 			fmt.Println("Failed to send response:", err)
 		}

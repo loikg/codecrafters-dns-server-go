@@ -11,6 +11,7 @@ import (
 type DNSMessage struct {
     Header DNSHeader
     Questions []DNSQuestion
+    Answers []DNSAnswer
 }
 
 type DNSHeader struct {
@@ -39,6 +40,27 @@ type DNSQuestion struct {
     Class uint16
 }
 
+type DNSAnswer struct {
+    Name	string
+    Type	uint16
+    Class	uint16
+    TTL uint32
+    Data []byte
+}
+
+func (a DNSAnswer) Serialize() []byte {
+    var buff bytes.Buffer
+
+    buff.Write(serializeDomainName(a.Name))
+    binary.Write(&buff, binary.BigEndian, a.Type)
+    binary.Write(&buff, binary.BigEndian, a.Class)
+    binary.Write(&buff, binary.BigEndian, a.TTL)
+    binary.Write(&buff, binary.BigEndian, uint16(len(a.Data)))
+    buff.Write(a.Data)
+
+    return buff.Bytes()[:buff.Len()]
+}
+
 func (q DNSQuestion) Serialize() []byte {
     var buff bytes.Buffer
 
@@ -61,6 +83,9 @@ func (msg DNSMessage) Serialize() []byte {
     buff.Write(msg.Header.Serialize())
     for _, q := range msg.Questions {
         buff.Write(q.Serialize())
+    }
+    for _, a := range msg.Answers {
+        buff.Write(a.Serialize())
     }
 
     return buff.Bytes()[:buff.Len()]
@@ -133,13 +158,22 @@ func main() {
                     QR: true,
                 },
                 QDCOUNT: 1,
+                ANCOUNT: 1,
             },
             Questions: []DNSQuestion{
                 {
-                    //Name: "google.com",
                     Name: "codecrafters.io",
                     Type: 0x0001,
                     Class: 0x0001,
+                },
+            },
+            Answers: []DNSAnswer{
+                {
+                    Name: "codecrafters.io",
+                    Type: 1,
+                    Class: 1,
+                    TTL: 60,
+                    Data: []byte{0x8, 0x8, 0x8, 0x8},
                 },
             },
         }

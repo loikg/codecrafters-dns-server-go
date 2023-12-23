@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"net"
+	"strings"
 )
 
 type DNSMessage struct {
     Header DNSHeader
+    Questions []DNSQuestion
 }
 
 type DNSHeader struct {
@@ -30,8 +33,37 @@ type DNSHeaderFlags struct {
 	RCODE  uint16 // 4bit
 }
 
+type DNSQuestion struct {
+    Name string
+    Type uint16
+    Class uint16
+}
+
+func (q DNSQuestion) Serialize() []byte {
+    var buff bytes.Buffer
+
+    serializedDomain := serializeDomainName(q.Name)
+    if _, err := buff.Write(serializedDomain); err != nil {
+        panic(err)
+    }
+    if err := binary.Write(&buff, binary.BigEndian, q.Type); err != nil {
+        panic(err)
+    }
+    if err := binary.Write(&buff, binary.BigEndian, q.Class); err != nil {
+        panic(err)
+    }
+
+    return buff.Bytes()[:buff.Len()]
+}
+
 func (msg DNSMessage) Serialize() []byte {
-    return msg.Header.Serialize()
+    var buff bytes.Buffer
+    buff.Write(msg.Header.Serialize())
+    for _, q := range msg.Questions {
+        buff.Write(q.Serialize())
+    }
+
+    return buff.Bytes()[:buff.Len()]
 }
 
 func (header DNSHeader) Serialize() []byte {
@@ -100,6 +132,15 @@ func main() {
                 Flags: DNSHeaderFlags{
                     QR: true,
                 },
+                QDCOUNT: 1,
+            },
+            Questions: []DNSQuestion{
+                {
+                    //Name: "google.com",
+                    Name: "codecrafters.io",
+                    Type: 0x0001,
+                    Class: 0x0001,
+                },
             },
         }
 
@@ -110,4 +151,18 @@ func main() {
 			fmt.Println("Failed to send response:", err)
 		}
 	}
+}
+
+func serializeDomainName(domain string) []byte {
+    var buff bytes.Buffer
+
+    labels := strings.Split(domain, ".")
+    for _, label := range labels {
+        b := []byte(label)
+        buff.WriteByte(uint8(len(b)))
+        buff.Write(b)
+    }
+    buff.WriteByte(0x0)
+
+    return buff.Bytes()[:buff.Len()]
 }

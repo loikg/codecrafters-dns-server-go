@@ -103,3 +103,17 @@ func TestDNSMessage_Serialize(t *testing.T) {
 		})
 	}
 }
+
+func TestUnMarshalDomain(t *testing.T) {
+    expected := "google.com"
+    buf := []byte{0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00}
+
+    result, err := UnMarshalDomain(buf)
+    if err != nil {
+        t.Fatalf("unexpected error: %v", err)
+    }
+
+    if result != expected {
+        t.Errorf("expected: %s but got %s", expected, result)
+    }
+}

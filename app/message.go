@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"strings"
 )
 
@@ -117,7 +118,7 @@ type DNSQuestion struct {
 func (q DNSQuestion) MarshalBinary() ([]byte, error) {
 	var buff bytes.Buffer
 
-	serializedDomain := serializeDomainName(q.Name)
+	serializedDomain := MarshalDomain(q.Name)
 	if _, err := buff.Write(serializedDomain); err != nil {
 		return nil, err
 	}
@@ -131,6 +132,39 @@ func (q DNSQuestion) MarshalBinary() ([]byte, error) {
 	return buff.Bytes()[:buff.Len()], nil
 }
 
+func (q* DNSQuestion) UnMarshalBinary(buf []byte) error {
+    var s strings.Builder
+    r := bytes.NewReader(buf)
+
+    for {
+        labelLen, err := r.ReadByte()
+        if err != nil {
+            return err
+        }
+        if labelLen == 0x00 {
+            break
+        }
+        labelBytes := make([]byte, labelLen)
+        if _, err := r.Read(labelBytes); err != nil {
+            return err
+        }
+        if s.Len() != 0 {
+            s.WriteRune('.')
+        }
+        s.Write(labelBytes)
+    }
+
+    q.Name = s.String()
+    if err := binary.Read(r, binary.BigEndian, &q.Type); err !=nil {
+        return err
+    }
+    if err := binary.Read(r, binary.BigEndian, &q.Class); err != nil {
+        return err
+    }
+
+    return nil
+}
+
 type DNSAnswer struct {
 	Name  string
 	Type  uint16
@@ -142,7 +176,7 @@ type DNSAnswer struct {
 func (a DNSAnswer) MarshalBinary() ([]byte, error) {
 	var buff bytes.Buffer
 
-	if _, err := buff.Write(serializeDomainName(a.Name)); err != nil {
+	if _, err := buff.Write(MarshalDomain(a.Name)); err != nil {
 		return nil, err
 	}
 	binary.Write(&buff, binary.BigEndian, a.Type)
@@ -173,7 +207,9 @@ func CreateResponse(req DNSMessage) DNSMessage {
 				OPCODE: req.Header.Flags.OPCODE,
 				RD:     req.Header.Flags.RD,
 			},
+            QDCOUNT: uint16(len(req.Questions)),
 		},
+        Questions: req.Questions,
 	}
 	if req.Header.Flags.OPCODE != 0 {
 		msg.Header.Flags.RCODE = 4
@@ -192,7 +228,19 @@ func (msg *DNSMessage) AddAnswers(answers ...DNSAnswer) {
 }
 
 func (msg *DNSMessage) UnmarshalBinary(data []byte) error {
-	return msg.Header.UnmarshalBinary(data)
+    r := bytes.NewReader(data)
+    if err := readHeader(r, &msg.Header); err != nil {
+        return err
+    }
+    for i := 0; i < int(msg.Header.QDCOUNT); i++ {
+        q := DNSQuestion{}
+        if err := readQuestion(r, &q); err != nil {
+            return err
+        }
+        msg.Questions = append(msg.Questions, q)
+    }
+
+    return nil
 }
 
 func (msg DNSMessage) MarshalBinary() ([]byte, error) {
@@ -227,7 +275,7 @@ func (msg DNSMessage) MarshalBinary() ([]byte, error) {
 	return buff.Bytes()[:buff.Len()], nil
 }
 
-func serializeDomainName(domain string) []byte {
+func MarshalDomain(domain string) []byte {
 	var buff bytes.Buffer
 
 	labels := strings.Split(domain, ".")
@@ -239,4 +287,83 @@ func serializeDomainName(domain string) []byte {
 	buff.WriteByte(0x0)
 
 	return buff.Bytes()[:buff.Len()]
+}
+
+func UnMarshalDomain(buf []byte) (string, error) {
+    var s strings.Builder
+    var i uint
+    maxLen := uint(len(buf)-1) // Exclude the 0x00 at the end
+
+    for i < maxLen {
+        strLen := uint(buf[i])
+        i++
+        s.Write(buf[i:i+strLen])
+        i+=strLen
+        if i < maxLen {
+            s.WriteRune('.')
+        }
+    }
+
+
+    return s.String(), nil
+}
+
+func readHeader(r io.Reader, header *DNSHeader) error {
+	if err := binary.Read(r, binary.BigEndian, &header.ID); err != nil {
+		return err
+	}
+    flags := make([]byte, 2)
+    if _, err := r.Read(flags); err != nil {
+        return err
+    }
+	if err := header.Flags.UnmarshalBinary(flags); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &header.QDCOUNT); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &header.ANCOUNT); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &header.NSCOUNT); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &header.ARCOUNT); err != nil {
+		return err
+	}
+
+    return nil
+}
+
+func readQuestion(r io.Reader, question *DNSQuestion) error {
+    var s strings.Builder
+
+    for {
+        b := make([]byte, 1)
+        _, err := r.Read(b)
+        if err != nil {
+            return err
+        }
+        if b[0] == 0x00 {
+            break
+        }
+        labelBytes := make([]byte, uint8(b[0]))
+        if _, err := r.Read(labelBytes); err != nil {
+            return err
+        }
+        if s.Len() != 0 {
+            s.WriteRune('.')
+        }
+        s.Write(labelBytes)
+    }
+
+    question.Name = s.String()
+    if err := binary.Read(r, binary.BigEndian, &question.Type); err !=nil {
+        return err
+    }
+    if err := binary.Read(r, binary.BigEndian, &question.Class); err != nil {
+        return err
+    }
+
+    return nil
 }

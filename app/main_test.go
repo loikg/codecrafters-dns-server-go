@@ -147,7 +147,7 @@ func TestReadDomain(t *testing.T) {
             },
             pos: 12,
             expectedDomain: "FOO.F.ISI.ARPA",
-            expectByteReadCount: 18, // started at 12 + read 6
+            expectByteReadCount: 6, // It doesn't include bytes read from pointer
         },
     }
 

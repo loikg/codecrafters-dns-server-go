@@ -335,16 +335,16 @@ func readHeader(r io.Reader, header *DNSHeader) error {
 // readDomain read labels and build the domain. It follows encountered pointers.
 // It stops after encountering either 0x00 or a pointer.
 func readDomain(r *bytes.Reader, pos int) (string, int, error) {
+    byteCount := 0
     labels := []string{}
 
     for {
         b, err := r.ReadByte()
         if err != nil {
             fmt.Println("failed to read head byte")
-            return "", pos, err
+            return "", byteCount, err
         }
-        fmt.Printf("%x\n", b)
-        pos++
+        byteCount++
         if b == 0x00 { // End of domain
             break
         }
@@ -352,32 +352,31 @@ func readDomain(r *bytes.Reader, pos int) (string, int, error) {
             // Discard the readbyte and re-read as a uint16 with the following byte
             if err := r.UnreadByte(); err != nil {
                 fmt.Println("failed to unread ptr first byte")
-                return "", pos, err
+                return "", byteCount, err
             }
-            pos--
+            byteCount--
             var offset uint16
             if err := binary.Read(r, binary.BigEndian, &offset); err != nil {
                 fmt.Println("failed to read point bytes")
-                return "", pos, err
+                return "", byteCount, err
             }
-            pos+=2
+            byteCount+=2
             offset &= 0x3FFF // Discard the first 2 bit indicating this is a pointer
-            fmt.Printf("pointer found %d\n", offset)
-            original := pos
+            original := pos+byteCount
             _, err := r.Seek(int64(offset), io.SeekStart)
             if err != nil {
                 fmt.Println("failed to seek")
-                return "", pos, err
+                return "", byteCount, err
             }
             str, _, err := readDomain(r, int(offset))
             if err != nil {
                 fmt.Println("failed to recursively call readDomainV2")
-                return "", pos, err
+                return "", byteCount, err
             }
             _, err = r.Seek(int64(original), io.SeekStart)
             if err != nil {
                 fmt.Println("failed to seek back to original position")
-                return "", pos, err
+                return "", byteCount, err
             }
             labels = append(labels, str)
             break
@@ -387,9 +386,9 @@ func readDomain(r *bytes.Reader, pos int) (string, int, error) {
             n, err := r.Read(buf)
             if err != nil {
                 fmt.Println("failed to read label")
-                return "", pos, err
+                return "", byteCount, err
             }
-            pos+=n
+            byteCount+=n
             labels = append(labels, string(buf))
         }
 
@@ -397,43 +396,45 @@ func readDomain(r *bytes.Reader, pos int) (string, int, error) {
 
     s := strings.Join(labels, ".")
 
-    return s, pos, nil
+    return s, byteCount, nil
 }
 
 
 func readQuestion(r *bytes.Reader, pos int) ( DNSQuestion, int, error ) {
+    byteCount := 0
     domain, n, err := readDomain(r, pos)
     if err != nil {
-        return DNSQuestion{}, pos, err
+        return DNSQuestion{}, byteCount, err
     }
-    pos=n
+    byteCount=+n
 
     question := DNSQuestion{
         Name: domain,
     }
     if err := binary.Read(r, binary.BigEndian, &question.Type); err != nil {
-        return DNSQuestion{}, pos, err
+        return DNSQuestion{}, byteCount, err
     }
-    pos+=2
+    byteCount+=2
     if err := binary.Read(r, binary.BigEndian, &question.Class); err != nil {
-        return DNSQuestion{}, pos, err
+        return DNSQuestion{}, byteCount, err
     }
-    pos+=2
+    byteCount+=2
 
-    return question, pos, nil
+    return question, byteCount, nil
 }
 
 func readQuestions(r *bytes.Reader, pos int, qcount uint16) ([]DNSQuestion, int, error) {
+    byteCount := 0
     questions := make([]DNSQuestion, 0, qcount)
     for i := 0; i < int(qcount); i++ {
-        q, n, err := readQuestion(r, pos)
+        q, n, err := readQuestion(r, pos+byteCount)
         fmt.Println("read", n)
         if err != nil {
             return nil, pos, err
         }
-        pos=n
+        byteCount+=n
         questions = append(questions, q)
     }
 
-    return questions, pos, nil
+    return questions, byteCount, nil
 }

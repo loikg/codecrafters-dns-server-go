@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net"
 )
@@ -28,26 +29,27 @@ func main() {
 			break
 		}
 
-		receivedData := string(buf[:size])
-		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
-
+        fmt.Printf("REQ: %s\n", hex.EncodeToString(buf[:size]))
 		req := DNSMessage{}
-		if err := req.UnmarshalBinary(buf); err != nil {
+        if err := req.UnmarshalBinary(buf[:size]); err != nil {
 			fmt.Println(err)
 		}
-
-		//fmt.Printf("REQ: %x\n %+v\n", buf, req)
 		fmt.Printf("REQ: %+v\n", req)
 
 		resp := CreateResponse(req)
 
-		resp.AddAnswers(DNSAnswer{
-			Name:  req.Questions[0].Name,
-			Type:  req.Questions[0].Type,
-			Class: req.Questions[0].Class,
-			TTL:   60,
-			Data:  []byte{0x8, 0x8, 0x8, 0x8},
-		})
+        for _, q := range req.Questions {
+		    resp.AddAnswers(DNSAnswer{
+		    	Name:  q.Name,
+		    	Type:  q.Type,
+		    	Class: q.Class,
+		    	TTL:   60,
+		    	Data:  []byte{0x8, 0x8, 0x8, 0x8},
+		    })
+        }
+
+        fmt.Printf("RESP: %+v\n", resp)
+
 
 		response, err := resp.MarshalBinary()
 		if err != nil {

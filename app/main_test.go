@@ -120,14 +120,14 @@ func TestUnMarshalDomain(t *testing.T) {
 	}
 }
 
-func TestReadQuestion(t *testing.T) {
+func TestReadQuestions(t *testing.T) {
 	q := []byte{
 		0x04, 0xD2, 0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Header
 		0x01, 0x46, // F: 1 byte => F
 		0x03, 0x49, 0x53, 0x49, // ISI: 3 bytes => ISI
         0x04, 0x41, 0x52, 0x50, 0x41, // ARPA: 4 bytes => ARPA
 		0x00,                   // End of label
-		0x03, 0x46, 0x4F, 0x4F, // FOOD: 3 bytes => FOO
+		0x03, 0x46, 0x4F, 0x4F, // FOO: 3 bytes => FOO
 		0xC0, 0x14, // Pointer to offset 20
 		0xC0, 0x1A, // Pointer to offset 26
 		0x0, // ROOT
@@ -159,4 +159,184 @@ func TestReadQuestion(t *testing.T) {
 	if !reflect.DeepEqual(expected, parsedQuestions) {
 		t.Errorf("expected: %+v\nbut got: %+v\n", expected, parsedQuestions)
 	}
+}
+
+func TestReadDomainV2(t *testing.T) {
+    tcs := []struct{
+        Name string
+        buf []byte
+        pos int
+        expectedDomain string
+        expectByteReadCount int
+    }{
+        {
+            Name: "parse google.com",
+            buf: []byte{0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00},
+            pos: 0,
+            expectedDomain: "google.com",
+            expectByteReadCount: 12,
+        },
+        {
+            Name: "parse with pointer",
+            buf: []byte{
+		        0x01, 0x46, // F: 1 byte => F
+		        0x03, 0x49, 0x53, 0x49, // ISI: 3 bytes => ISI
+                0x04, 0x41, 0x52, 0x50, 0x41, // ARPA: 4 bytes => ARPA
+		        0x00,                   // End of label
+		        0x03, 0x46, 0x4F, 0x4F, // FOO: 3 bytes => FOO
+		        0xC0, 0x00, // Pointer to offset 0 the beggining of this buffer
+            },
+            pos: 12,
+            expectedDomain: "FOO.F.ISI.ARPA",
+            expectByteReadCount: 18, // started at 12 + read 6
+        },
+    }
+
+    for _, tc := range tcs {
+        tc := tc
+        t.Run(tc.Name, func(t *testing.T) {
+            r := bytes.NewReader(tc.buf)
+            if tc.pos > 0 {
+                _, err := r.Seek(int64(tc.pos), io.SeekStart)
+                if err != nil {
+                    t.Fatalf("failed to seek to pos when setting up test")
+                }
+            }
+            domain, n, err := readDomainV2(r, tc.pos)
+            if err != nil {
+                t.Fatalf("unexpected error: %v\n", err)
+            }
+            if n != tc.expectByteReadCount {
+                t.Errorf("expected to read %d bytes but read: %d instead", tc.expectByteReadCount, n)
+            }
+            if domain != tc.expectedDomain {
+                t.Errorf("expected domain to be %s but got %s", tc.expectedDomain, domain)
+            }
+        })
+    }
+}
+
+func TestReadQuestion(t *testing.T) {
+    tcs := []struct{
+        Name string
+        buf []byte
+        pos int
+        expectedQuestion DNSQuestion
+        expectByteReadCount int
+    }{
+        {
+            Name: "parse IN A google.com",
+            buf: []byte{
+                0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00,
+                0x00, 0x01, 0x00, 0x01,
+            },
+            pos: 0,
+            expectedQuestion: DNSQuestion{
+                Name: "google.com",
+                Type: 1,
+                Class: 1,
+            },
+            expectByteReadCount: 16,
+        },
+    }
+
+    for _, tc := range tcs {
+        tc := tc
+        t.Run(tc.Name, func(t *testing.T) {
+            r := bytes.NewReader(tc.buf)
+            if tc.pos > 0 {
+                _, err := r.Seek(int64(tc.pos), io.SeekStart)
+                if err != nil {
+                    t.Fatalf("failed to seek to pos when setting up test")
+                }
+            }
+            question, n, err := readQuestion(r, tc.pos)
+            if err != nil {
+                t.Fatalf("unexpected error: %v\n", err)
+            }
+            if n != tc.expectByteReadCount {
+                t.Errorf("expected to read %d bytes but read: %d instead", tc.expectByteReadCount, n)
+            }
+            if !reflect.DeepEqual(tc.expectedQuestion, question) {
+                t.Errorf("expected domain to be %+v but got %+v", tc.expectedQuestion, question)
+            }
+        })
+    }
+}
+
+func TestReadQuestionV2(t *testing.T) {
+    tcs := []struct{
+        Name string
+        buf []byte
+        pos int
+        expectedQuestions []DNSQuestion
+        expectByteReadCount int
+    }{
+        {
+            Name: "parse IN A google.com",
+            buf: []byte{
+                0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00,
+                0x00, 0x01, 0x00, 0x01,
+            },
+            pos: 0,
+            expectedQuestions: []DNSQuestion{
+                {
+                    Name: "google.com",
+                    Type: 1,
+                    Class: 1,
+                },
+            },
+            expectByteReadCount: 16,
+        },
+        {
+            Name: "parse IN A google.com",
+            buf: []byte{
+		        0x01, 0x46, // F: 1 byte => F
+		        0x03, 0x49, 0x53, 0x49, // ISI: 3 bytes => ISI
+                0x04, 0x41, 0x52, 0x50, 0x41, // ARPA: 4 bytes => ARPA
+		        0x00,                   // End of label
+                0x00, 0x01, 0x00, 0x01, // TYPE and CLASS
+		        0x03, 0x46, 0x4F, 0x4F, // FOO: 3 bytes => FOO
+		        0xC0, 0x00, // Pointer to offset 0 the beggining of this buffer
+                0x00, 0x01, 0x00, 0x01, // TYPE and CLASS
+            },
+            pos: 0,
+            expectedQuestions: []DNSQuestion{
+                {
+                    Name: "F.ISI.ARPA",
+                    Type: 1,
+                    Class: 1,
+                },
+                {
+                    Name: "FOO.F.ISI.ARPA",
+                    Type: 1,
+                    Class: 1,
+                },
+            },
+            expectByteReadCount: 26,
+        },
+    }
+
+    for _, tc := range tcs {
+        tc := tc
+        t.Run(tc.Name, func(t *testing.T) {
+            r := bytes.NewReader(tc.buf)
+            if tc.pos > 0 {
+                _, err := r.Seek(int64(tc.pos), io.SeekStart)
+                if err != nil {
+                    t.Fatalf("failed to seek to pos when setting up test")
+                }
+            }
+            questions, n, err := readQuestionsV2(r, tc.pos, 1)
+            if err != nil {
+                t.Fatalf("unexpected error: %v\n", err)
+            }
+            if n != tc.expectByteReadCount {
+                t.Errorf("expected to read %d bytes but read: %d instead", tc.expectByteReadCount, n)
+            }
+            if !reflect.DeepEqual(tc.expectedQuestions, questions) {
+                t.Errorf("expected domain to be %+v but got %+v", tc.expectedQuestions, questions)
+            }
+        })
+    }
 }

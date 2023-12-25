@@ -36,18 +36,18 @@ func main() {
 			fmt.Println(err)
 		}
 
-		fmt.Printf("REQ: %x\n %+v\n", buf, req)
+		//fmt.Printf("REQ: %x\n %+v\n", buf, req)
+		fmt.Printf("REQ: %+v\n", req)
 
 		resp := CreateResponse(req)
 
 		resp.AddAnswers(DNSAnswer{
-			Name: req.Questions[0].Name,
+			Name:  req.Questions[0].Name,
 			Type:  req.Questions[0].Type,
 			Class: req.Questions[0].Class,
 			TTL:   60,
 			Data:  []byte{0x8, 0x8, 0x8, 0x8},
 		})
-
 
 		response, err := resp.MarshalBinary()
 		if err != nil {

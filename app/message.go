@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -132,37 +134,37 @@ func (q DNSQuestion) MarshalBinary() ([]byte, error) {
 	return buff.Bytes()[:buff.Len()], nil
 }
 
-func (q* DNSQuestion) UnMarshalBinary(buf []byte) error {
-    var s strings.Builder
-    r := bytes.NewReader(buf)
+func (q *DNSQuestion) UnMarshalBinary(buf []byte) error {
+	var s strings.Builder
+	r := bytes.NewReader(buf)
 
-    for {
-        labelLen, err := r.ReadByte()
-        if err != nil {
-            return err
-        }
-        if labelLen == 0x00 {
-            break
-        }
-        labelBytes := make([]byte, labelLen)
-        if _, err := r.Read(labelBytes); err != nil {
-            return err
-        }
-        if s.Len() != 0 {
-            s.WriteRune('.')
-        }
-        s.Write(labelBytes)
-    }
+	for {
+		labelLen, err := r.ReadByte()
+		if err != nil {
+			return err
+		}
+		if labelLen == 0x00 {
+			break
+		}
+		labelBytes := make([]byte, labelLen)
+		if _, err := r.Read(labelBytes); err != nil {
+			return err
+		}
+		if s.Len() != 0 {
+			s.WriteRune('.')
+		}
+		s.Write(labelBytes)
+	}
 
-    q.Name = s.String()
-    if err := binary.Read(r, binary.BigEndian, &q.Type); err !=nil {
-        return err
-    }
-    if err := binary.Read(r, binary.BigEndian, &q.Class); err != nil {
-        return err
-    }
+	q.Name = s.String()
+	if err := binary.Read(r, binary.BigEndian, &q.Type); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &q.Class); err != nil {
+		return err
+	}
 
-    return nil
+	return nil
 }
 
 type DNSAnswer struct {
@@ -207,9 +209,9 @@ func CreateResponse(req DNSMessage) DNSMessage {
 				OPCODE: req.Header.Flags.OPCODE,
 				RD:     req.Header.Flags.RD,
 			},
-            QDCOUNT: uint16(len(req.Questions)),
+			QDCOUNT: uint16(len(req.Questions)),
 		},
-        Questions: req.Questions,
+		Questions: req.Questions,
 	}
 	if req.Header.Flags.OPCODE != 0 {
 		msg.Header.Flags.RCODE = 4
@@ -228,19 +230,23 @@ func (msg *DNSMessage) AddAnswers(answers ...DNSAnswer) {
 }
 
 func (msg *DNSMessage) UnmarshalBinary(data []byte) error {
-    r := bytes.NewReader(data)
-    if err := readHeader(r, &msg.Header); err != nil {
+	r := bytes.NewReader(data)
+	if err := readHeader(r, &msg.Header); err != nil {
+		return err
+	}
+    questions, err := readQuestions(r, msg.Header.QDCOUNT)
+    if err != nil {
         return err
     }
-    for i := 0; i < int(msg.Header.QDCOUNT); i++ {
-        q := DNSQuestion{}
-        if err := readQuestion(r, &q); err != nil {
-            return err
-        }
-        msg.Questions = append(msg.Questions, q)
-    }
-
-    return nil
+    msg.Questions = questions
+	// for i := 0; i < int(msg.Header.QDCOUNT); i++ {
+	// 	q := DNSQuestion{}
+	// 	if err := readQuestion(r, &q); err != nil {
+	// 		return err
+	// 	}
+	// 	msg.Questions = append(msg.Questions, q)
+	// }
+	return nil
 }
 
 func (msg DNSMessage) MarshalBinary() ([]byte, error) {
@@ -290,32 +296,31 @@ func MarshalDomain(domain string) []byte {
 }
 
 func UnMarshalDomain(buf []byte) (string, error) {
-    var s strings.Builder
-    var i uint
-    maxLen := uint(len(buf)-1) // Exclude the 0x00 at the end
+	var s strings.Builder
+	var i uint
+	maxLen := uint(len(buf) - 1) // Exclude the 0x00 at the end
 
-    for i < maxLen {
-        strLen := uint(buf[i])
-        i++
-        s.Write(buf[i:i+strLen])
-        i+=strLen
-        if i < maxLen {
-            s.WriteRune('.')
-        }
-    }
+	for i < maxLen {
+		strLen := uint(buf[i])
+		i++
+		s.Write(buf[i : i+strLen])
+		i += strLen
+		if i < maxLen {
+			s.WriteRune('.')
+		}
+	}
 
-
-    return s.String(), nil
+	return s.String(), nil
 }
 
 func readHeader(r io.Reader, header *DNSHeader) error {
 	if err := binary.Read(r, binary.BigEndian, &header.ID); err != nil {
 		return err
 	}
-    flags := make([]byte, 2)
-    if _, err := r.Read(flags); err != nil {
-        return err
-    }
+	flags := make([]byte, 2)
+	if _, err := r.Read(flags); err != nil {
+		return err
+	}
 	if err := header.Flags.UnmarshalBinary(flags); err != nil {
 		return err
 	}
@@ -332,38 +337,127 @@ func readHeader(r io.Reader, header *DNSHeader) error {
 		return err
 	}
 
-    return nil
+	return nil
 }
 
 func readQuestion(r io.Reader, question *DNSQuestion) error {
-    var s strings.Builder
+	var s strings.Builder
 
-    for {
-        b := make([]byte, 1)
-        _, err := r.Read(b)
+	for {
+		b := make([]byte, 1)
+		_, err := r.Read(b)
+		if err != nil {
+			return err
+		}
+		if b[0] == 0x00 {
+			break
+		}
+		labelBytes := make([]byte, uint8(b[0]))
+		if _, err := r.Read(labelBytes); err != nil {
+			return err
+		}
+		if s.Len() != 0 {
+			s.WriteRune('.')
+		}
+		s.Write(labelBytes)
+	}
+
+	question.Name = s.String()
+	if err := binary.Read(r, binary.BigEndian, &question.Type); err != nil {
+		return err
+	}
+	if err := binary.Read(r, binary.BigEndian, &question.Class); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readDomain(buf []byte, pos *int, pointers map[int][]byte) (string, error) {
+	var s strings.Builder
+	r := bytes.NewReader(buf)
+	for {
+		head, err := r.ReadByte()
+		if err != nil {
+			return "", nil
+		}
+        *pos++
+		if head == 0x00 {
+			break
+		}
+		// Handle pointer
+		var str []byte
+		if head >= 192 {
+			offsetByte, _ := r.ReadByte()
+			offset := binary.BigEndian.Uint16([]byte{head, offsetByte}) & 0x3FFF
+            *pos+=2
+            ptrValue, ok := pointers[int(offset)]
+            //fmt.Printf("pointer %d => %+v\n", offset, pointers)
+            printPointersMap(pointers)
+            if !ok {
+                return "", fmt.Errorf("pointer %d not found", offset)
+            }
+			str = ptrValue
+		} else {
+			str = make([]byte, head)
+            n, err := r.Read(str)
+			if err != nil {
+				return "", err
+			}
+			pointers[*pos+1] = str // +1 to point to the first byte the label string
+            *pos+=n
+		}
+		if s.Len() > 0 {
+			s.WriteRune('.')
+		}
+		s.Write(str)
+	}
+
+    printPointersMap(pointers)
+    fmt.Println(s.String())
+
+	return s.String(), nil
+}
+
+func readQuestions(r io.Reader, qcount uint16) ([]DNSQuestion, error) {
+    pointers := map[int][]byte{}
+    domains := []string{}
+	rb := bufio.NewReader(r)
+
+    pos := 12 // skip header bytes in counter
+	for i := 0; i < int(qcount); i++ {
+		domainBytes, err := rb.ReadSlice(0x00)
+		if err != nil {
+			return nil, err
+		}
+        parsedDomain, err := readDomain(domainBytes, &pos, pointers)
         if err != nil {
-            return err
+            return nil, err
         }
-        if b[0] == 0x00 {
-            break
-        }
-        labelBytes := make([]byte, uint8(b[0]))
-        if _, err := r.Read(labelBytes); err != nil {
-            return err
-        }
-        if s.Len() != 0 {
-            s.WriteRune('.')
-        }
-        s.Write(labelBytes)
+        domains = append(domains, parsedDomain)
+	}
+
+    var qType, qClass uint16
+    if err := binary.Read(rb, binary.BigEndian, &qType); err != nil {
+        return nil, err
+    }
+    if err := binary.Read(rb, binary.BigEndian, &qClass); err != nil {
+        return nil, err
     }
 
-    question.Name = s.String()
-    if err := binary.Read(r, binary.BigEndian, &question.Type); err !=nil {
-        return err
-    }
-    if err := binary.Read(r, binary.BigEndian, &question.Class); err != nil {
-        return err
+    questions := make([]DNSQuestion, len(domains))
+    for i, domain := range domains {
+        questions[i].Name = domain
+        questions[i].Type = qType
+        questions[i].Class = qClass
     }
 
-    return nil
+	return questions, nil
+}
+
+func printPointersMap(ptrs map[int][]byte) {
+    for k, v := range ptrs {
+        fmt.Printf("%d: %s\t", k, string(v))
+    }
+    fmt.Printf("\n\n")
 }

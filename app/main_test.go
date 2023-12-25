@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"reflect"
 	"testing"
 )
 
@@ -105,15 +107,56 @@ func TestDNSMessage_Serialize(t *testing.T) {
 }
 
 func TestUnMarshalDomain(t *testing.T) {
-    expected := "google.com"
-    buf := []byte{0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00}
+	expected := "google.com"
+	buf := []byte{0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00}
 
-    result, err := UnMarshalDomain(buf)
-    if err != nil {
-        t.Fatalf("unexpected error: %v", err)
-    }
+	result, err := UnMarshalDomain(buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-    if result != expected {
-        t.Errorf("expected: %s but got %s", expected, result)
-    }
+	if result != expected {
+		t.Errorf("expected: %s but got %s", expected, result)
+	}
+}
+
+func TestReadQuestion(t *testing.T) {
+	q := []byte{
+		0x04, 0xD2, 0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Header
+		0x01, 0x46, // F: 1 byte => F
+		0x03, 0x49, 0x53, 0x49, // ISI: 3 bytes => ISI
+        0x04, 0x41, 0x52, 0x50, 0x41, // ARPA: 4 bytes => ARPA
+		0x00,                   // End of label
+		0x03, 0x46, 0x4F, 0x4F, // FOOD: 3 bytes => FOO
+		0xC0, 0x14, // Pointer to offset 20
+		0xC0, 0x1A, // Pointer to offset 26
+		0x0, // ROOT
+        0x00, 0x01, // TYPE
+        0x00, 0x01, // CLASS
+	}
+	expected := []DNSQuestion{
+		{
+			Name:  "F.ISI.ARPA",
+			Class: 1,
+			Type:  1,
+		},
+		{
+			Name:  "FOO.F.ISI.ARPA",
+			Class: 1,
+			Type:  1,
+		},
+	}
+
+	r := bytes.NewReader(q)
+    // Skip the header
+    r.Seek(12, io.SeekCurrent)
+
+	parsedQuestions, err := readQuestions(r, 2)
+	if err != nil {
+		t.Fatalf("unexpected error reading questions: %v", err)
+	}
+
+	if !reflect.DeepEqual(expected, parsedQuestions) {
+		t.Errorf("expected: %+v\nbut got: %+v\n", expected, parsedQuestions)
+	}
 }

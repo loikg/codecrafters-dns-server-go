@@ -120,48 +120,7 @@ func TestUnMarshalDomain(t *testing.T) {
 	}
 }
 
-func TestReadQuestions(t *testing.T) {
-	q := []byte{
-		0x04, 0xD2, 0x80, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Header
-		0x01, 0x46, // F: 1 byte => F
-		0x03, 0x49, 0x53, 0x49, // ISI: 3 bytes => ISI
-        0x04, 0x41, 0x52, 0x50, 0x41, // ARPA: 4 bytes => ARPA
-		0x00,                   // End of label
-		0x03, 0x46, 0x4F, 0x4F, // FOO: 3 bytes => FOO
-		0xC0, 0x14, // Pointer to offset 20
-		0xC0, 0x1A, // Pointer to offset 26
-		0x0, // ROOT
-        0x00, 0x01, // TYPE
-        0x00, 0x01, // CLASS
-	}
-	expected := []DNSQuestion{
-		{
-			Name:  "F.ISI.ARPA",
-			Class: 1,
-			Type:  1,
-		},
-		{
-			Name:  "FOO.F.ISI.ARPA",
-			Class: 1,
-			Type:  1,
-		},
-	}
-
-	r := bytes.NewReader(q)
-    // Skip the header
-    r.Seek(12, io.SeekCurrent)
-
-	parsedQuestions, err := readQuestions(r, 2)
-	if err != nil {
-		t.Fatalf("unexpected error reading questions: %v", err)
-	}
-
-	if !reflect.DeepEqual(expected, parsedQuestions) {
-		t.Errorf("expected: %+v\nbut got: %+v\n", expected, parsedQuestions)
-	}
-}
-
-func TestReadDomainV2(t *testing.T) {
+func TestReadDomain(t *testing.T) {
     tcs := []struct{
         Name string
         buf []byte
@@ -202,7 +161,7 @@ func TestReadDomainV2(t *testing.T) {
                     t.Fatalf("failed to seek to pos when setting up test")
                 }
             }
-            domain, n, err := readDomainV2(r, tc.pos)
+            domain, n, err := readDomain(r, tc.pos)
             if err != nil {
                 t.Fatalf("unexpected error: %v\n", err)
             }
@@ -264,7 +223,7 @@ func TestReadQuestion(t *testing.T) {
     }
 }
 
-func TestReadQuestionV2(t *testing.T) {
+func TestReadQuestions(t *testing.T) {
     tcs := []struct{
         Name string
         buf []byte
@@ -289,7 +248,7 @@ func TestReadQuestionV2(t *testing.T) {
             expectByteReadCount: 16,
         },
         {
-            Name: "parse IN A google.com",
+            Name: "parse IN A F.ISI.ARPA and FOO.F.ISI.ARPA",
             buf: []byte{
 		        0x01, 0x46, // F: 1 byte => F
 		        0x03, 0x49, 0x53, 0x49, // ISI: 3 bytes => ISI
@@ -327,7 +286,7 @@ func TestReadQuestionV2(t *testing.T) {
                     t.Fatalf("failed to seek to pos when setting up test")
                 }
             }
-            questions, n, err := readQuestionsV2(r, tc.pos, 1)
+            questions, n, err := readQuestions(r, tc.pos, uint16(len(tc.expectedQuestions)))
             if err != nil {
                 t.Fatalf("unexpected error: %v\n", err)
             }

@@ -2,11 +2,21 @@ package main
 
 import (
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"net"
 )
 
 func main() {
+	resolver := flag.String(
+		"resolver",
+		"r",
+		"address of DNS resolver to forward requests to: 0.0.0.0:53",
+	)
+
+	flag.Parse()
+	fmt.Println(resolver)
+
 	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2053")
 	if err != nil {
 		fmt.Println("Failed to resolve UDP address:", err)
@@ -29,27 +39,26 @@ func main() {
 			break
 		}
 
-        fmt.Printf("REQ: %s\n", hex.EncodeToString(buf[:size]))
+		fmt.Printf("REQ: %s\n", hex.EncodeToString(buf[:size]))
 		req := DNSMessage{}
-        if err := req.UnmarshalBinary(buf[:size]); err != nil {
+		if err := req.UnmarshalBinary(buf[:size]); err != nil {
 			fmt.Println(err)
 		}
 		fmt.Printf("REQ: %+v\n", req)
 
 		resp := CreateResponse(req)
 
-        for _, q := range req.Questions {
-		    resp.AddAnswers(DNSAnswer{
-		    	Name:  q.Name,
-		    	Type:  q.Type,
-		    	Class: q.Class,
-		    	TTL:   60,
-		    	Data:  []byte{0x8, 0x8, 0x8, 0x8},
-		    })
-        }
+		for _, q := range req.Questions {
+			resp.AddAnswers(DNSAnswer{
+				Name:  q.Name,
+				Type:  q.Type,
+				Class: q.Class,
+				TTL:   60,
+				Data:  []byte{0x8, 0x8, 0x8, 0x8},
+			})
+		}
 
-        fmt.Printf("RESP: %+v\n", resp)
-
+		fmt.Printf("RESP: %+v\n", resp)
 
 		response, err := resp.MarshalBinary()
 		if err != nil {

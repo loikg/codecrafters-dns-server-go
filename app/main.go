@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/hex"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -21,18 +20,14 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Println("resolverAddress: ", resolverAddress)
-
 	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2053")
 	if err != nil {
-		fmt.Println("Failed to resolve UDP address:", err)
-		return
+		log.Fatalf("Failed to resolve UDP address: %v", err)
 	}
 
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		fmt.Println("Failed to bind to address:", err)
-		return
+		log.Fatalf("Failed to bind to address: %v", err)
 	}
 	defer udpConn.Close()
 
@@ -41,8 +36,8 @@ func main() {
 	for {
 		size, source, err := udpConn.ReadFromUDP(buf)
 		if err != nil {
-			fmt.Println("Error receiving data:", err)
-			break
+			log.Printf("Error receiving data: %v", err)
+			continue
 		}
 
 		reqBuf := make([]byte, size)
@@ -52,17 +47,14 @@ func main() {
 }
 
 func processMessage(conn *net.UDPConn, source *net.UDPAddr, buf []byte) {
-	// foreach question
-	//      Create and encode DNSMessage
-	//      Forward to resolve
-	// construct answer
 	log.Printf("processing request from %s", source)
 	log.Printf("REQ: %s", hex.EncodeToString(buf))
 	req := DNSMessage{}
 	if err := req.UnmarshalBinary(buf); err != nil {
-		fmt.Println(err)
+		log.Printf("failed to parse request: %v", err)
+		return
 	}
-	fmt.Printf("REQ: %+v\n", req)
+	log.Printf("REQ: %+v\n", req)
 
 	resp := CreateResponse(req)
 
@@ -107,17 +99,17 @@ func processMessage(conn *net.UDPConn, source *net.UDPAddr, buf []byte) {
 	wg.Wait()
 
 	resp.AddAnswers(answers...)
-	fmt.Printf("RESP: %+v\n", resp)
 
 	response, err := resp.MarshalBinary()
 	if err != nil {
-		fmt.Printf("failed to marshal respoinse: %v\n", err)
+		log.Printf("failed to marshal respoinse: %v\n", err)
 		return
 	}
 
 	_, err = conn.WriteToUDP(response, source)
 	if err != nil {
-		fmt.Println("Failed to send response:", err)
+		log.Println("Failed to send response:", err)
+		return
 	}
 	log.Printf("request processed %s", source)
 }

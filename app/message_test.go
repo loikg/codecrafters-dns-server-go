@@ -5,6 +5,8 @@ import (
 	"io"
 	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestDNSMessage_Serialize(t *testing.T) {
@@ -420,5 +422,40 @@ func TestReadAnswers(t *testing.T) {
 				t.Errorf("expected domain to be %+v but got %+v", tc.expectedAnswers, answers)
 			}
 		})
+	}
+}
+
+func TestDNSMessage_MarshalBinary(t *testing.T) {
+	reqBytes := []byte{
+		0xb1, 0x87, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x0c, 0x63, 0x6f, 0x64, 0x65, 0x63, 0x72, 0x61, 0x66, 0x74, 0x65, 0x72, 0x73,
+		0x02, 0x69, 0x6f,
+		0x00,
+		0x00, 0x01, 0x00, 0x01,
+	}
+	expectedMessage := DNSMessage{
+		Header: DNSHeader{
+			ID: 45447,
+			Flags: DNSHeaderFlags{
+				RD: true,
+			},
+			QDCOUNT: 1,
+		},
+		Questions: []DNSQuestion{
+			{
+				Name:  "codecrafters.io",
+				Type:  1,
+				Class: 1,
+			},
+		},
+		Answers: []DNSAnswer{},
+	}
+
+	var request DNSMessage
+	if err := request.UnmarshalBinary(reqBytes); err != nil {
+		t.Fatalf("failed to unmarshal request: %v", err)
+	}
+	if !cmp.Equal(expectedMessage, request) {
+		t.Errorf("result does not match expected output: %s", cmp.Diff(expectedMessage, request))
 	}
 }

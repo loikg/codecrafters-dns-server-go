@@ -14,11 +14,11 @@ type Resolver struct {
 }
 
 func NewResolver(serverAddr string) (*Resolver, error) {
-	serverUDPAddr, err := net.ResolveUDPAddr("udp4", serverAddr)
+	serverUDPAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := net.DialUDP("udp4", nil, serverUDPAddr)
+	conn, err := net.DialUDP("udp", nil, serverUDPAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial %v: %w", serverAddr, err)
 	}

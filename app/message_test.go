@@ -299,3 +299,126 @@ func TestReadQuestions(t *testing.T) {
 		})
 	}
 }
+
+func TestReadAnswer(t *testing.T) {
+	tcs := []struct {
+		Name                string
+		buf                 []byte
+		pos                 int
+		expectedAnswer      DNSAnswer
+		expectByteReadCount int
+	}{
+		{
+			Name: "parse answert to IN A google.com",
+			buf: []byte{
+				0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // Name: [6]google[3]com
+				0x00, 0x01, // TYPE = 1
+				0x00, 0x01, // CLASS = 1
+				0x00, 0x00, 0x00, 0x3C, // TTL = 60
+				0x00, 0x04, // RDLENGHT = 4
+				0x08, 0x08, 0x08, 0x08, // DATA
+			},
+			pos: 0,
+			expectedAnswer: DNSAnswer{
+				Name:  "google.com",
+				Type:  1,
+				Class: 1,
+				TTL:   60,
+				Data:  []byte{0x08, 0x08, 0x08, 0x08},
+			},
+			expectByteReadCount: 26,
+		},
+	}
+
+	for _, tc := range tcs {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			r := bytes.NewReader(tc.buf)
+			if tc.pos > 0 {
+				_, err := r.Seek(int64(tc.pos), io.SeekStart)
+				if err != nil {
+					t.Fatalf("failed to seek to pos when setting up test")
+				}
+			}
+			answer, n, err := readAnswer(r, tc.pos)
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n", err)
+			}
+			if n != tc.expectByteReadCount {
+				t.Errorf("expected to read %d bytes but read: %d instead", tc.expectByteReadCount, n)
+			}
+			if !reflect.DeepEqual(tc.expectedAnswer, answer) {
+				t.Errorf("expected domain to be %+v but got %+v", tc.expectedAnswer, answer)
+			}
+		})
+	}
+}
+
+func TestReadAnswers(t *testing.T) {
+	tcs := []struct {
+		Name                string
+		buf                 []byte
+		pos                 int
+		expectedAnswers     []DNSAnswer
+		expectByteReadCount int
+	}{
+		{
+			Name: "parse answer to IN A google.com and IN A google.com",
+			buf: []byte{
+				0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // Name: [6]google[3]com
+				0x00, 0x01, // TYPE = 1
+				0x00, 0x01, // CLASS = 1
+				0x00, 0x00, 0x00, 0x3C, // TTL = 60
+				0x00, 0x04, // RDLENGHT = 4
+				0x08, 0x08, 0x08, 0x08, // DATA
+				0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, // Name: [6]google[3]com
+				0x00, 0x01, // TYPE = 1
+				0x00, 0x01, // CLASS = 1
+				0x00, 0x00, 0x00, 0x3C, // TTL = 60
+				0x00, 0x04, // RDLENGHT = 4
+				0x08, 0x08, 0x08, 0x08, // DATA
+			},
+			pos: 0,
+			expectedAnswers: []DNSAnswer{
+				{
+					Name:  "google.com",
+					Type:  1,
+					Class: 1,
+					TTL:   60,
+					Data:  []byte{0x08, 0x08, 0x08, 0x08},
+				},
+				{
+					Name:  "google.com",
+					Type:  1,
+					Class: 1,
+					TTL:   60,
+					Data:  []byte{0x08, 0x08, 0x08, 0x08},
+				},
+			},
+			expectByteReadCount: 52,
+		},
+	}
+
+	for _, tc := range tcs {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			r := bytes.NewReader(tc.buf)
+			if tc.pos > 0 {
+				_, err := r.Seek(int64(tc.pos), io.SeekStart)
+				if err != nil {
+					t.Fatalf("failed to seek to pos when setting up test")
+				}
+			}
+			answers, n, err := readAnswers(r, tc.pos, 2)
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n", err)
+			}
+			if n != tc.expectByteReadCount {
+				t.Errorf("expected to read %d bytes but read: %d instead", tc.expectByteReadCount, n)
+			}
+			if !reflect.DeepEqual(tc.expectedAnswers, answers) {
+				t.Errorf("expected domain to be %+v but got %+v", tc.expectedAnswers, answers)
+			}
+		})
+	}
+}

@@ -229,15 +229,23 @@ func (msg *DNSMessage) AddAnswers(answers ...DNSAnswer) {
 }
 
 func (msg *DNSMessage) UnmarshalBinary(data []byte) error {
+	byteCount := 12
 	r := bytes.NewReader(data)
 	if err := readHeader(r, &msg.Header); err != nil {
 		return err
 	}
-	questions, _, err := readQuestions(r, 12, msg.Header.QDCOUNT)
+	questions, n, err := readQuestions(r, byteCount, msg.Header.QDCOUNT)
 	if err != nil {
 		return err
 	}
+	byteCount += n
 	msg.Questions = questions
+	answers, _, err := readAnswers(r, byteCount, msg.Header.QDCOUNT)
+	if err != nil {
+		return err
+	}
+	msg.Answers = answers
+
 	return nil
 }
 
@@ -436,4 +444,56 @@ func readQuestions(r *bytes.Reader, pos int, qcount uint16) ([]DNSQuestion, int,
 	}
 
 	return questions, byteCount, nil
+}
+
+func readAnswer(r *bytes.Reader, pos int) (DNSAnswer, int, error) {
+	var answer DNSAnswer
+	byteCount := 0
+	domain, n, err := readDomain(r, pos)
+	if err != nil {
+		return DNSAnswer{}, n, err
+	}
+	answer.Name = domain
+	byteCount += n
+	if err := binary.Read(r, binary.BigEndian, &answer.Type); err != nil {
+		return DNSAnswer{}, byteCount, err
+	}
+	byteCount += 2
+	if err := binary.Read(r, binary.BigEndian, &answer.Class); err != nil {
+		return DNSAnswer{}, byteCount, err
+	}
+	byteCount += 2
+	if err := binary.Read(r, binary.BigEndian, &answer.TTL); err != nil {
+		return DNSAnswer{}, byteCount, err
+	}
+	byteCount += 4
+
+	var rdLen uint16
+	if err := binary.Read(r, binary.BigEndian, &rdLen); err != nil {
+		return DNSAnswer{}, byteCount, err
+	}
+	byteCount += 2
+	buf := make([]byte, rdLen)
+	n, err = r.Read(buf)
+	if err != nil {
+		return DNSAnswer{}, byteCount, err
+	}
+	byteCount += n
+	answer.Data = buf[:n]
+
+	return answer, byteCount, nil
+}
+
+func readAnswers(r *bytes.Reader, pos int, ancount uint16) ([]DNSAnswer, int, error) {
+	byteCount := 0
+	answers := make([]DNSAnswer, ancount)
+	for i := 0; i < int(ancount); i++ {
+		answer, n, err := readAnswer(r, pos+byteCount)
+		if err != nil {
+			return nil, byteCount, err
+		}
+		byteCount += n
+		answers[i] = answer
+	}
+	return answers, byteCount, nil
 }

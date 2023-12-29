@@ -200,8 +200,8 @@ type DNSMessage struct {
 
 // CreateResponse create a DNS response base on a DNS request
 // It automatically set DNSHeader.ID, DNSHeaderFlags.QR, DNSHeaderFlags.OPCODE, DNSHeaderFlags.RD
-func CreateResponse(req DNSMessage) DNSMessage {
-	msg := DNSMessage{
+func CreateResponse(req *DNSMessage) *DNSMessage {
+	msg := &DNSMessage{
 		Header: DNSHeader{
 			ID: req.Header.ID,
 			Flags: DNSHeaderFlags{

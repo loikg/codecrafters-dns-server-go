@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const readWriteTiemeout = time.Second * 2
+
 type Resolver struct {
 	conn          *net.UDPConn
 	serverUDPAddr *net.UDPAddr
@@ -59,14 +61,14 @@ func (r Resolver) SendRequest(msg *DNSMessage) (*DNSMessage, error) {
 }
 
 func (r Resolver) write(buf []byte) (int, error) {
-	if err := r.conn.SetWriteDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := r.conn.SetWriteDeadline(time.Now().Add(readWriteTiemeout)); err != nil {
 		return 0, fmt.Errorf("failed to set udp connection write deadline: %v", err)
 	}
 	return r.conn.Write(buf)
 }
 
 func (r Resolver) readFromUDP(buf []byte) (int, *net.UDPAddr, error) {
-	if err := r.conn.SetReadDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := r.conn.SetReadDeadline(time.Now().Add(readWriteTiemeout)); err != nil {
 		return 0, nil, fmt.Errorf("failed to set udp connection read deadline: %v", err)
 	}
 	return r.conn.ReadFromUDP(buf)

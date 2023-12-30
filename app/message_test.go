@@ -99,8 +99,7 @@ func TestDNSMessage_Serialize(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expected no error got %v", err)
 			}
-			// t.Logf("%s => %s\n", hex.EncodeToString(tc.expected), hex.EncodeToString(msg))
-			t.Log(len(msg), len(tc.expected))
+
 			if !bytes.Equal(tc.expected, msg) {
 				t.Errorf("expected %x but got %x\n", tc.expected, msg)
 			}

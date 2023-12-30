@@ -50,14 +50,23 @@ func (r Resolver) SendRequest(msg *DNSMessage) (*DNSMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &DNSMessage{}
-	if err := res.UnmarshalBinary(resBuf[:n]); err != nil {
+	resp := &DNSMessage{}
+	if err := resp.UnmarshalBinary(resBuf[:n]); err != nil {
 		return nil, err
 	}
 
+	if resp.Header.Flags.RCODE != NoErrorResponseCode {
+		return nil, fmt.Errorf("resolver failed with RCODE: %d", resp.Header.Flags.RCODE)
+	}
+	if resp.Header.ANCOUNT == 0 ||
+		len(resp.Answers) == 0 ||
+		int(resp.Header.ANCOUNT) != len(resp.Answers) {
+		return nil, fmt.Errorf("resolver did not send answers")
+	}
+
 	log.Printf("received %d bytes: %s\n", len(resBuf[:n]), hex.EncodeToString(resBuf[:n]))
-	log.Printf("resolve request response received from %s: %+v", r.serverUDPAddr, res)
-	return res, nil
+	log.Printf("resolve request response received from %s: %+v", r.serverUDPAddr, resp)
+	return resp, nil
 }
 
 func (r Resolver) write(buf []byte) (int, error) {

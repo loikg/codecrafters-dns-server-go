@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/hex"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 )
@@ -53,6 +52,7 @@ func main() {
 			log.Printf("failed to parse request: %v", err)
 			return
 		}
+
 		log.Printf("REQ: %+v\n", req)
 		resp, err := processMessage(resolver, &req)
 		if err != nil {
@@ -68,7 +68,6 @@ func main() {
 		_, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
 			log.Println("Failed to send response:", err)
-			continue
 		}
 		log.Printf("request processed %s", source)
 	}
@@ -76,6 +75,13 @@ func main() {
 
 func processMessage(resolver *Resolver, req *DNSMessage) (*DNSMessage, error) {
 	resp := CreateResponse(req)
+
+	switch req.Header.Flags.OPCODE {
+	case InverseQueryOpCode:
+	case ServerStatusOpCode:
+		resp.Header.Flags.RCODE = NotImplementedResponseCode
+		return resp, nil
+	}
 
 	for i, q := range req.Questions {
 		req := DNSMessage{
@@ -94,8 +100,9 @@ func processMessage(resolver *Resolver, req *DNSMessage) (*DNSMessage, error) {
 		}
 		r, err := resolver.SendRequest(&req)
 		if err != nil {
-			log.Printf("resolver request failed: %v", err)
-			return nil, fmt.Errorf("failed to send resolve request: %v", err)
+			log.Printf("failed to send resolver request: %v", err)
+			resp.Header.Flags.RCODE = ServerFailureResponseCode
+			return resp, nil
 		}
 		resp.AddAnswers(r.Answers[0])
 		log.Printf("resolver request %d successfull", i)
